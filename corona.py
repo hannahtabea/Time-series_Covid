@@ -1,26 +1,10 @@
 import pandas as pd
-#import numpy as np
-import csv as csv
 #import datetime as dt
 import matplotlib.pyplot as plt
 
-# initialize list
-liste = []
-# read csv line by line
-with open('COVIDiSTRESS_April_27_clean.csv', encoding = 'utf-8') as csvfile:
-    datreader = csv.reader(csvfile, delimiter=',')
-    for row in datreader:
-        # remove elements not of interest
-        del row[54:len(row)]
-        liste.append(row[1:])
-            
-# set column names        
-titles = liste[0]
-
-# convert to pandas dataframe
-df = pd.DataFrame(data = liste,  columns = titles)
-# remove double header
-df, df.columns = df[1:] , df.iloc[0]
+# import only variables that have importance:   
+cols = ['RecordedDate','UserLanguage','Dem_age','Dem_maritalstatus', 'Dem_dependents','Dem_islolation','Scale_PSS10_UCLA_1', 'Scale_PSS10_UCLA_2', 'Scale_PSS10_UCLA_3', 'Scale_PSS10_UCLA_4', 'Scale_PSS10_UCLA_5','Scale_PSS10_UCLA_6', 'Scale_PSS10_UCLA_7','Scale_PSS10_UCLA_8','Scale_PSS10_UCLA_9','Scale_PSS10_UCLA_10','Scale_Lon_1','Scale_Lon_2','Scale_Lon_3','Corona_concerns_1', 'Corona_concerns_2', 'Corona_concerns_3','Corona_concerns_4','Corona_concerns_5']
+df = pd.read_csv('COVIDiSTRESS_April_27_clean.csv',encoding='latin1', usecols= cols)
 
 # descriptives
 df.head()
