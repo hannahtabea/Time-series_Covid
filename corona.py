@@ -4,8 +4,9 @@ import os
 import glob
 import numpy as np
 
-# set directory
-#os.chdir("/mydir")
+#------------------------------------------------------------------------------
+# set directory and handle files
+#------------------------------------------------------------------------------
 os.chdir("C:/Users/hanna/Dropbox/Methods_2019_2021/Python/Time series")
 # list all csv files
 all_filenames = [i for i in glob.glob('*.{}'.format('csv'))]
@@ -20,10 +21,11 @@ cols = ['RecordedDate','UserLanguage','Dem_age','Dem_maritalstatus', 'Dem_depend
 df = pd.concat([pd.read_csv(f, encoding='latin1', usecols= cols) for f in all_filenames ])
 #export to csv
 df.to_csv('COVIDiSTRESS All months.csv', index=False, encoding='latin1')
-df = pd.read_csv('COVIDiSTRESS All months.csv',encoding='latin1', parse_dates=['RecordedDate'])
+df = pd.read_csv('COVIDiSTRESS All months.csv',encoding='latin1', parse_dates=['RecordedDate'], index_col='RecordedDate')
 
 #------------------------------------------------------------------------------
 # descriptives
+#------------------------------------------------------------------------------
 print(df.head())
 print(df.dtypes)
 
@@ -32,25 +34,17 @@ df_ger = df[df['UserLanguage']=='DE']
 df_ger.isnull().values.any()
 
 #------------------------------------------------------------------------------
-# get number of unique dates
-len(df_ger["RecordedDate"].map(lambda t: t.date()).unique())
-# get number of unique days per month
-unique_days = (df_ger["RecordedDate"].dt.day
-              .groupby(df_ger["RecordedDate"].dt.month)
-              .nunique()
-              .rename_axis(['month'])
-              .reset_index(name='unique days'))
-print(unique_days)
-# get observations by month and day
-n_day_month = (df_ger["RecordedDate"]   
-               .groupby([df_ger["RecordedDate"].dt.month,df_ger["RecordedDate"].dt.day])
-               .count()).rename_axis(['month','day'])
-# pd.set_option('display.max_rows', None)
-print(n_day_month)
+# get total number of unique dates
+count_per_date = df_ger.index.map(lambda t: t.date()).value_counts().rename_axis('date').reset_index(name='count')
+print(count_per_date)
+
+# get n per month
+n_per_month = df_ger.index.strftime("%B").value_counts()
+print(n_per_month)
 
 #------------------------------------------------------------------------------
 #  plot observations across time
-plt.hist(df_ger['RecordedDate'],bins=61, edgecolor='k')
+plt.hist(df_ger.index,bins=61, edgecolor='k')
 plt.title("Number of observations from March to June 2020")
 plt.xticks(rotation = 45)
 plt.savefig("Dates_hist.png", dpi=100,bbox_inches='tight')
@@ -58,24 +52,34 @@ plt.show()
 
 #------------------------------------------------------------------------------
 # plot stress responses
-category_names = ['Never','Almost never', 'Sometimes', 'Fairly often', 'Very often']
-# select all columns that contain stress responses
-filter_col = [col for col in df_ger if col.startswith('Scale')]
-df_stress = df_ger[filter_col]
-# calculate percent per response
-df['sales'] / df.groupby('state')['sales'].transform('sum')
+#------------------------------------------------------------------------------
+# assign category names
+categories_stress = ['Never','Almost never', 'Sometimes', 'Fairly often', 'Very often']
+categories_concerns = ['Strongly disagree', 'Disagree', 'Slightly disagree', 'Slightly agree', 'Agree', 'Strongly agree']
+
+# select all columns that contain relevant responses
+filter_stress_col = [col for col in df_ger if col.startswith('Scale')]
+df_stress = df_ger[filter_stress_col]
+filter_concerns_col = [col for col in df_ger if col.startswith('Corona')]
+df_concerns = df_ger[filter_concerns_col]
+
 # replace colnames by more meaningful statements
-new_names = ['upset after unexpected event', 'unable to control life', 'nervous and stressed', 'confident to cope with own problems', 
+stress_names = ['upset after unexpected event', 'unable to control life', 'nervous and stressed', 'confident to cope with own problems', 
              'things were going my way', 'not able to cope with tasks', 'able to control irritations', 'feel on top of things',
              'angry because things out of control', 'difficulties piling up']
+concerns_names = ['myself', 'my family', 'my close friends', 'my country', 'other countries around the globe']
 
-results = pd.DataFrame(columns=new_names)
-for i in range(0,len(df_stress.columns)):
-    this_column = results.columns[i]
-    results[this_column] = df_stress.iloc[:, i].groupby(df_stress.iloc[:, i]).count().div(len(df_stress)).mul(100).round().astype(int).reset_index(drop=True).to_frame()
-dict_stress = results.to_dict('list')
+# define a function that takes a subset of the data and column names as input to compute percentage of chosen response categories for all columns
+def create_percentages(data, cols):
+    results = pd.DataFrame(columns = cols)
+    for col in range(0,len(data.columns)):
+        this_column = results.columns[col]
+        results[this_column] = data.iloc[:, col].groupby(data.iloc[:, col]).count().div(len(data)).mul(100).round().astype(int).reset_index(drop=True).to_frame() 
+    return(results.to_dict('list'))
+dict_stress = create_percentages(data=df_stress, cols=stress_names)
+dict_concerns = create_percentages(data=df_concerns, cols=concerns_names)
 
-
+# define a funtion to plot likert data as stacked divergent bar chart
 def plot_likert(results, category_names, title):
     """
     Parameters
@@ -93,7 +97,11 @@ def plot_likert(results, category_names, title):
     data = np.array(list(results.values()))
     data_cum = data.cumsum(axis=1)
     middle_index = data.shape[1]//2
-    offsets = data[:, range(middle_index)].sum(axis=1) + data[:, middle_index]/2
+    # calculate offsets depending on whether number of response categories is even or odd
+    if (len(category_names) % 2) == 0:
+        offsets = data[:, range(middle_index)].sum(axis=1)  
+    else: 
+        offsets = data[:, range(middle_index)].sum(axis=1)  + data[:, middle_index]/2
     
     # Color Mapping
     category_colors = plt.get_cmap('coolwarm_r')(
@@ -105,7 +113,7 @@ def plot_likert(results, category_names, title):
     for i, (colname, color) in enumerate(zip(category_names, category_colors)):
         widths = data[:, i]
         starts = data_cum[:, i] - widths - offsets
-        rects = ax.barh(labels, widths, left=starts, height=0.5,
+        ax.barh(labels, widths, left=starts, height=0.5,
                         label=colname, color=color)
     
     # Add Zero Reference Line
@@ -136,14 +144,17 @@ def plot_likert(results, category_names, title):
 
     return fig, ax
 
-fig, ax = plot_likert(dict_stress, category_names,'Perceived stress in Germany, spring 2020')
+# plot
+fig, ax = plot_likert(results=dict_stress, category_names=categories_stress, title='Perceived stress in Germany, spring 2020')
+plt.show()
+fig, ax = plot_likert(results=dict_concerns, category_names=categories_concerns, title='Concerns about the consequenses of the Corona virus in Germany, spring 2020')
 plt.show()
 
 #To Dos
 ###
 # have relaxations in corona restrictions lead to an decrease in psychological stress in the german population during the early corona outbreak in 2020?
 
-# create similar plot for corona concerns 
+# set datetime to index and adjust descriptives and histogram
 # calculate sum scores for each participant per scale, find the relevant columns in dataset with pandas
 # aggregation: compute rolling 7-day mean scores for stress + pct_change (normalize data so that it can be read as percentage change)
 
